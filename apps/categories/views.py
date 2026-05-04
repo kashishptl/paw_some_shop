@@ -30,7 +30,7 @@ class CategoryListCreateView(APIView):
         else:
             # 👤 User sees only active categories
             categories = Category.objects.filter(
-                product__is_active=True
+                products__is_active=True
             ).distinct()
 
         serializer = CategorySerializer(categories, many=True)
