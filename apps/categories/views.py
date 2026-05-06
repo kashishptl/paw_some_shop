@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from .models import Category
 from .serializers import CategorySerializer
@@ -16,19 +16,18 @@ from apps.products.serializers import ProductSerializer
 class CategoryListCreateView(APIView):
 
     def get_permissions(self):
-        # 🔐 Only admin can create
         if self.request.method == "POST":
-            return [IsAuthenticated(), IsAdminUser()]
-        # 👤 Everyone can view
+            return [IsAuthenticated()]
         return [AllowAny()]
 
     def get(self, request):
 
-        # 👑 Admin sees ALL categories
-        if request.user.is_authenticated and request.user.is_staff:
+        # 👑 Admin & Manager → ALL categories
+        if request.user.is_authenticated and request.user.role in ["admin", "manager"]:
             categories = Category.objects.all()
+
         else:
-            # 👤 User sees only active categories
+            # 👤 Customer → only active categories
             categories = Category.objects.filter(
                 products__is_active=True
             ).distinct()
@@ -41,7 +40,15 @@ class CategoryListCreateView(APIView):
             "data": serializer.data
         })
 
+
     def post(self, request):
+
+        if request.user.role not in ["admin", "manager"]:
+            return Response({
+                "success": False,
+                "message": "Only admin or manager can create category"
+            }, status=403)
+
         serializer = CategorySerializer(data=request.data)
 
         if serializer.is_valid():
@@ -66,12 +73,19 @@ class CategoryListCreateView(APIView):
 class CategoryDetailView(APIView):
 
     def get_permissions(self):
-        # 🔐 Only admin can update/delete
         if self.request.method in ["PATCH", "DELETE"]:
-            return [IsAuthenticated(), IsAdminUser()]
+            return [IsAuthenticated()]
         return [AllowAny()]
 
+
     def patch(self, request, id):
+
+        if request.user.role not in ["admin", "manager"]:
+            return Response({
+                "success": False,
+                "message": "Only admin or manager can update category"
+            }, status=403)
+
         try:
             category = Category.objects.get(id=id)
         except Category.DoesNotExist:
@@ -96,7 +110,15 @@ class CategoryDetailView(APIView):
             "errors": serializer.errors
         }, status=400)
 
+
     def delete(self, request, id):
+
+        if request.user.role not in ["admin", "manager"]:
+            return Response({
+                "success": False,
+                "message": "Only admin or manager can delete category"
+            }, status=403)
+
         try:
             category = Category.objects.get(id=id)
         except Category.DoesNotExist:
@@ -129,20 +151,20 @@ class CategoryProductsView(APIView):
                 "message": "Category not found"
             }, status=404)
 
-        # 🔴 Hide inactive category from normal users
-        if not category.is_active:
-            if not (request.user.is_authenticated and request.user.is_staff):
+        # 🔴 Hide inactive category from customer
+        if request.user.role == "customer":
+            if not category.is_active:
                 return Response({
                     "success": False,
                     "message": "Category not available"
                 }, status=403)
 
-        # 👑 Admin sees all products
-        if request.user.is_authenticated and request.user.is_staff:
+        # 👑 Admin & Manager → all products
+        if request.user.is_authenticated and request.user.role in ["admin", "manager"]:
             products = Product.objects.filter(category=category)
 
         else:
-            # 👤 Users see only active + in-stock products
+            # 👤 Customer → only active products
             products = Product.objects.filter(
                 category__is_active=True,
                 category=category,

@@ -27,7 +27,7 @@ urlpatterns = [
     # -------------------------------
 
     # POST → add/update rating (user)
-    path('<int:id>/rate/', ProductRateView.as_view(), name='product-rate'),
+    path('<int:id>/ratings/', ProductRateView.as_view(), name='product-rate'),
 
     # GET → all ratings of a product
     path('<int:id>/ratings/', ProductRatingListView.as_view(), name='product-ratings'),

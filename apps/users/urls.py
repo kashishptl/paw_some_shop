@@ -15,4 +15,5 @@ urlpatterns = [
     path('wishlist/', WishlistView.as_view()),
     path('wishlist/add/', AddToWishlistView.as_view()),
     path('wishlist/remove/<int:product_id>/', RemoveFromWishlistView.as_view()),
+    path('assign-role/<int:user_id>/', AssignRoleView.as_view()),
 ]

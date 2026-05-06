@@ -1,3 +1,5 @@
+from urllib import request
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -10,6 +12,8 @@ from django.contrib.auth import get_user_model
 from .models import User, Wishlist
 from .serializers import SignupSerializer, UserSerializer, WishlistSerializer
 from apps.products.models import Product
+
+from .permissions import IsAdmin, IsManagerOrAdmin
 
 User = get_user_model()
 
@@ -36,7 +40,8 @@ class SignupView(APIView):
                 "user": {
                     "id": user.id,
                     "email": user.email,
-                    "name": user.name
+                    "name": user.name,
+                    "role": user.role
                 }
             }, status=status.HTTP_201_CREATED)
 
@@ -64,7 +69,8 @@ class LoginView(APIView):
                 "user": {
                     "id": user.id,
                     "email": user.email,
-                    "name": user.name
+                    "name": user.name,
+                    "role": user.role
                 }
             })
 
@@ -96,6 +102,9 @@ class AddToWishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if request.user.role != "customer":
+            return Response({"error": "Only customers can add to wishlist"}, status=403)
+
         product_id = request.data.get("product_id")
 
         product = get_object_or_404(Product, id=product_id)
@@ -119,6 +128,11 @@ class RemoveFromWishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, product_id):
+
+        if request.user.role != "customer":
+            return Response({"error": "Only customers can remove wishlist"}, status=403)
+        
+
         Wishlist.objects.filter(
             user=request.user,
             product_id=product_id
@@ -135,7 +149,30 @@ class WishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+
+        if request.user.role != "customer":
+            return Response({"error": "Only customers can view wishlist"}, status=403)
+
         items = Wishlist.objects.filter(user=request.user)
         serializer = WishlistSerializer(items, many=True)
         return Response(serializer.data)
-   
+
+# =========================
+# ADMIN ASSIGN ROLE VIEW
+# =========================
+
+class AssignRoleView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def patch(self, request, user_id):
+        user = User.objects.get(id=user_id)
+
+        role = request.data.get("role")
+
+        if role not in ["admin", "manager", "customer"]:
+            return Response({"error": "Invalid role"}, status=400)
+
+        user.role = role
+        user.save()
+
+        return Response({"message": f"Role updated to {role}"})

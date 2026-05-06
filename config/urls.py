@@ -42,4 +42,5 @@ urlpatterns = [
     path('api/categories/', include('apps.categories.urls')),
     path('api/cart/', include('apps.cart.urls')),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0)),
+    path('api/orders/', include('apps.orders.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
