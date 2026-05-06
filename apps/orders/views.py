@@ -1,79 +1,91 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 
 from apps.orders.serializers import OrderSerializer
-from rest_framework.permissions import IsAuthenticated
 from .models import Order, OrderItem
-from apps.products.models import Product
 from apps.cart.models import CartItem
+
 
 # -------------------------------
 # CREATE ORDER (USER ONLY)
 # -------------------------------
-permission_classes = [IsAuthenticated]
 
 class CreateOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         user = request.user
 
-        cart_items = CartItem.objects.filter(user=user)
+        # If your CartItem has direct user field, use: CartItem.objects.filter(user=user)
+        cart_items = CartItem.objects.filter(cart__user=user).select_related("product")
 
         if not cart_items.exists():
-            return Response({"error": "Cart is empty"}, status=400)
+            return Response({"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
 
-        total_amount = 0
-        order = Order.objects.create(user=user, total_amount=0)
+        with transaction.atomic():
+            total_amount = 0
+            order = Order.objects.create(user=user, total_amount=0)
 
-        for item in cart_items:
-            product = item.product
-            quantity = item.quantity
+            for item in cart_items:
+                product = item.product
+                quantity = item.quantity
 
-            # ✅ STOCK CHECK
-            if quantity > product.stock:
-                order.delete()  # rollback
-                return Response({
-                    "error": f"Only {product.stock} items available for {product.name}"
-                }, status=400)
+                if quantity > product.stock:
+                    transaction.set_rollback(True)
+                    return Response({
+                        "error": f"Only {product.stock} items available for {product.name}"
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
-            price = product.price
-            total_amount += price * quantity
+                price = product.price
+                total_amount += price * quantity
 
-            # Create order item
-            OrderItem.objects.create(
-                order=order,
-                product=product,
-                quantity=quantity,
-                price=price
-            )
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=quantity,
+                    price=price
+                )
 
-            # ✅ REDUCE STOCK
-            product.stock -= quantity
-            product.save()
+                product.stock -= quantity
+                product.save()
 
-        order.total_amount = total_amount
-        order.save()
+            order.total_amount = total_amount
+            order.save()
 
-        # Clear cart
-        cart_items.delete()
+            cart_items.delete()
 
-        return Response({"message": "Order created successfully"}, status=201)
-    
+        serializer = OrderSerializer(order)
+
+        return Response({
+            "success": True,
+            "message": "Order created successfully",
+            "order": serializer.data
+        }, status=status.HTTP_201_CREATED)
+
+
 # -------------------------------
-# Get All Orders
+# GET USER ORDERS
 # -------------------------------
 
 class OrderListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        orders = Order.objects.filter(user=request.user)
+        orders = Order.objects.filter(user=request.user).order_by("-created_at")
         serializer = OrderSerializer(orders, many=True)
-        return Response(serializer.data)
-    
+
+        return Response({
+            "success": True,
+            "orders": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
 # -------------------------------
-# Single Order
+# SINGLE ORDER
 # -------------------------------
 
 class OrderDetailView(APIView):
@@ -82,10 +94,15 @@ class OrderDetailView(APIView):
     def get(self, request, id):
         order = get_object_or_404(Order, id=id, user=request.user)
         serializer = OrderSerializer(order)
-        return Response(serializer.data)
-    
+
+        return Response({
+            "success": True,
+            "order": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
 # -------------------------------
-# Cancel Order
+# CANCEL ORDER
 # -------------------------------
 
 class CancelOrderView(APIView):
@@ -95,29 +112,57 @@ class CancelOrderView(APIView):
         order = get_object_or_404(Order, id=id, user=request.user)
 
         if order.status == "delivered":
-            return Response({"error": "Cannot cancel delivered order"}, status=400)
+            return Response({
+                "error": "Cannot cancel delivered order"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        order.status = "cancelled"
-        order.save()
+        if order.status == "cancelled":
+            return Response({
+                "error": "Order already cancelled"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({"message": "Order cancelled"})
+        with transaction.atomic():
+            # Restore stock after cancellation
+            for item in order.items.all():
+                product = item.product
+                product.stock += item.quantity
+                product.save()
+
+            order.status = "cancelled"
+            order.save()
+
+        return Response({
+            "success": True,
+            "message": "Order cancelled successfully"
+        }, status=status.HTTP_200_OK)
+
 
 # -------------------------------
-# Admin Update Status
+# ADMIN UPDATE ORDER STATUS
 # -------------------------------
 
 class UpdateOrderStatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, id):
+        if not request.user.is_staff:
+            return Response({
+                "error": "Only admin can update order status"
+            }, status=status.HTTP_403_FORBIDDEN)
+
         order = get_object_or_404(Order, id=id)
 
         new_status = request.data.get("status")
 
         if new_status not in dict(Order.STATUS_CHOICES):
-            return Response({"error": "Invalid status"}, status=400)
+            return Response({
+                "error": "Invalid status"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         order.status = new_status
         order.save()
 
-        return Response({"message": "Status updated"})
+        return Response({
+            "success": True,
+            "message": "Status updated successfully"
+        }, status=status.HTTP_200_OK)

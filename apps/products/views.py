@@ -1,20 +1,20 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 
 from apps.products.models import Product, Rating
 from apps.products.serializers import ProductSerializer, RatingSerializer
 
 
 # -------------------------------
-# PRODUCT LIST + CREATE
+# PRODUCT LIST (USER + ADMIN)
 # -------------------------------
 class ProductListCreateView(APIView):
 
     def get_permissions(self):
         if self.request.method == "POST":
-            return [IsAuthenticated()]
+            return [IsAuthenticated(), IsAdminUser()]
         return [AllowAny()]
 
     # -------------------------------
@@ -22,11 +22,11 @@ class ProductListCreateView(APIView):
     # -------------------------------
     def get(self, request):
 
-        # 👑 Admin & Manager → ALL products
-        if request.user.is_authenticated and request.user.role in ["admin", "manager"]:
+        # 🔥 ADMIN: sees ALL products
+        if request.user.is_authenticated and request.user.is_staff:
             products = Product.objects.all().select_related("category")
 
-        # 🛒 Customer → only active products
+        # 🟢 USER: only active + in-stock products
         else:
             products = Product.objects.filter(
                 category__is_active=True,
@@ -41,22 +41,21 @@ class ProductListCreateView(APIView):
             "data": serializer.data
         })
 
-
     # -------------------------------
-    # CREATE PRODUCT (ADMIN + MANAGER)
+    # CREATE PRODUCT (ADMIN ONLY)
     # -------------------------------
     def post(self, request):
 
-        if request.user.role not in ["admin", "manager"]:
+        if not request.user.is_staff:
             return Response({
                 "success": False,
-                "message": "Only admin or manager can add product"
+                "message": "Only admin can add product"
             }, status=403)
 
         serializer = ProductSerializer(data=request.data)
 
         if serializer.is_valid():
-            serializer.save(created_by=request.user)  # 🔥 track creator
+            serializer.save()
             return Response({
                 "success": True,
                 "message": "Product created successfully",
@@ -70,7 +69,7 @@ class ProductListCreateView(APIView):
 
 
 # -------------------------------
-# PRODUCT DETAIL
+# PRODUCT DETAIL (VIEW / UPDATE / DELETE)
 # -------------------------------
 class ProductDetailView(APIView):
 
@@ -86,8 +85,8 @@ class ProductDetailView(APIView):
                 "message": "Product not found"
             }, status=404)
 
-        # 🛒 Customer restriction
-        if request.user.role == "customer":
+        # 🔴 USER restriction
+        if not request.user.is_staff:
             if not product.is_active or product.stock <= 0:
                 return Response({
                     "success": False,
@@ -101,16 +100,15 @@ class ProductDetailView(APIView):
             "data": serializer.data
         })
 
-
     # -------------------------------
-    # UPDATE PRODUCT (ADMIN + MANAGER)
+    # UPDATE PRODUCT (ADMIN ONLY)
     # -------------------------------
     def patch(self, request, id):
 
-        if request.user.role not in ["admin", "manager"]:
+        if not request.user.is_staff:
             return Response({
                 "success": False,
-                "message": "Only admin or manager can update product"
+                "message": "Only admin can update product"
             }, status=403)
 
         try:
@@ -136,16 +134,15 @@ class ProductDetailView(APIView):
             "errors": serializer.errors
         }, status=400)
 
-
     # -------------------------------
-    # DELETE PRODUCT (ADMIN ONLY and manager)
+    # DELETE PRODUCT (ADMIN ONLY)
     # -------------------------------
     def delete(self, request, id):
 
-        if request.user.role not in ["admin", "manager"]:
+        if not request.user.is_staff:
             return Response({
                 "success": False,
-                "message": "Only admin or manager can delete product"
+                "message": "Only admin can delete product"
             }, status=403)
 
         try:
@@ -165,18 +162,12 @@ class ProductDetailView(APIView):
 
 
 # -------------------------------
-# PRODUCT RATING (CUSTOMER ONLY)
+# PRODUCT RATING (USER ONLY)
 # -------------------------------
 class ProductRateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
-
-        if request.user.role != "customer":
-            return Response({
-                "success": False,
-                "message": "Only customers can rate products"
-            }, status=403)
 
         try:
             product = Product.objects.get(id=id)
