@@ -9,6 +9,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
+from apps.cart.models import CartItem
+from apps.orders.models import Order
+from apps.orders.serializers import OrderSerializer
+from django.db.models import Sum, F
+
 from .models import User, Wishlist
 from .serializers import SignupSerializer, UserSerializer, WishlistSerializer
 from apps.products.models import Product
@@ -70,6 +75,7 @@ class LoginView(APIView):
                     "id": user.id,
                     "email": user.email,
                     "name": user.name,
+                    "is_active": user.is_active,
                     "role": user.role
                 }
             })
@@ -176,3 +182,45 @@ class AssignRoleView(APIView):
         user.save()
 
         return Response({"message": f"Role updated to {role}"})
+
+
+# =========================
+# USER DASHBOARD VIEW
+# =========================
+
+class UserDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        total_orders = Order.objects.filter(user=user).count()
+        pending_orders = Order.objects.filter(user=user, status="pending").count()
+        delivered_orders = Order.objects.filter(user=user, status="delivered").count()
+        cancelled_orders = Order.objects.filter(user=user, status="cancelled").count()
+
+        cart_items = CartItem.objects.filter(cart__user=user)
+
+        cart_items_count = cart_items.count()
+        cart_total = cart_items.aggregate(
+            total=Sum(F("quantity") * F("price_at_time"))
+        )["total"] or 0
+
+        wishlist_count = Wishlist.objects.filter(user=user).count()
+
+        recent_orders = Order.objects.filter(user=user).order_by("-created_at")[:5]
+
+        return Response({
+            "success": True,
+            "profile": UserSerializer(user, context={"request": request}).data,
+            "summary": {
+                "total_orders": total_orders,
+                "pending_orders": pending_orders,
+                "delivered_orders": delivered_orders,
+                "cancelled_orders": cancelled_orders,
+                "cart_items_count": cart_items_count,
+                "cart_total": cart_total,
+                "wishlist_count": wishlist_count,
+            },
+            "recent_orders": OrderSerializer(recent_orders, many=True).data
+        })

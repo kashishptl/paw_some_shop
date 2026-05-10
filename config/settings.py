@@ -52,15 +52,34 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'drf_yasg',
     "corsheaders",
+    'cloudinary_storage',
      
     'apps.users',
     'apps.products',
     'apps.categories',
     'apps.orders',
     'apps.payments',
-    'apps.cart',  
+    'apps.cart',
+    # "apps.address",
+    "apps.admin_dashboard",
 ]
 
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': 'dnwc4oykw',
+    'API_KEY': '772879876664757',
+    'API_SECRET': 'as1K-FLxSgacOF1Yoe7_hrrAvzM',
+}
+
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -78,7 +97,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",   
     "http://127.0.0.1:5173",
+    "http://192.168.1.26:8080",
+    "http://192.168.1.28:8080",
 ]
+ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -170,3 +192,6 @@ REST_FRAMEWORK = {
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+
+

@@ -39,8 +39,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/users/', include('apps.users.urls')),
     path('api/products/', include('apps.products.urls')),
-    path('api/categories/', include('apps.categories.urls')),
-    path('api/cart/', include('apps.cart.urls')),
+    path('api/cart/', include('apps.cart.urls')),path('api/categories/', include('apps.categories.urls')),
+    
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0)),
     path('api/orders/', include('apps.orders.urls')),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    path("api/admin/dashboard/", include("apps.admin_dashboard.urls")),
+] 
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

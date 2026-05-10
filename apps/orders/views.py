@@ -1,3 +1,5 @@
+from email.headerregistry import Address
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -5,10 +7,10 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 
-from apps.orders.serializers import OrderSerializer
+from apps.orders.serializers import AddressSerializer, OrderSerializer
 from .models import Order, OrderItem
 from apps.cart.models import CartItem
-
+from .models import Order, OrderItem, Address
 
 # -------------------------------
 # CREATE ORDER (USER ONLY)
@@ -20,15 +22,54 @@ class CreateOrderView(APIView):
     def post(self, request):
         user = request.user
 
-        # If your CartItem has direct user field, use: CartItem.objects.filter(user=user)
-        cart_items = CartItem.objects.filter(cart__user=user).select_related("product")
+        cart_items = CartItem.objects.filter(
+            cart__user=user
+        ).select_related("product")
 
         if not cart_items.exists():
-            return Response({"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "error": "Cart is empty"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        address_id = request.data.get("address_id")
+
+        if not address_id:
+            return Response({
+                "error": "address_id is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        address = get_object_or_404(
+            Address,
+            id=address_id,
+            user=user
+        )
+
+        payment_method = request.data.get("payment_method", "cod")
 
         with transaction.atomic():
-            total_amount = 0
-            order = Order.objects.create(user=user, total_amount=0)
+
+            order = Order.objects.create(
+                user=user,
+
+                address_ref=address,
+
+                full_name=address.full_name,
+                email=address.email,
+                address=address.address,
+                city=address.city,
+                zip_code=address.zip_code,
+                country=address.country,
+                phone=address.phone,
+
+                subtotal=0,
+                tax=0,
+                shipping_charge=0,
+                total_amount=0,
+
+                payment_method=payment_method
+            )
+
+            subtotal = 0
 
             for item in cart_items:
                 product = item.product
@@ -36,12 +77,13 @@ class CreateOrderView(APIView):
 
                 if quantity > product.stock:
                     transaction.set_rollback(True)
+
                     return Response({
                         "error": f"Only {product.stock} items available for {product.name}"
                     }, status=status.HTTP_400_BAD_REQUEST)
 
                 price = product.price
-                total_amount += price * quantity
+                subtotal += price * quantity
 
                 OrderItem.objects.create(
                     order=order,
@@ -53,7 +95,14 @@ class CreateOrderView(APIView):
                 product.stock -= quantity
                 product.save()
 
-            order.total_amount = total_amount
+            tax = 0
+            shipping_charge = 0
+
+            order.subtotal = subtotal
+            order.tax = tax
+            order.shipping_charge = shipping_charge
+            order.total_amount = subtotal + tax + shipping_charge
+
             order.save()
 
             cart_items.delete()
@@ -166,3 +215,50 @@ class UpdateOrderStatusView(APIView):
             "success": True,
             "message": "Status updated successfully"
         }, status=status.HTTP_200_OK)
+    
+# -------------------------------
+# USER ADDRESS VIEWS
+# -------------------------------
+    
+class AddressListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        addresses = Address.objects.filter(user=request.user).order_by("-created_at")
+        serializer = AddressSerializer(addresses, many=True)
+        return Response({"success": True, "addresses": serializer.data})
+
+    def post(self, request):
+        serializer = AddressSerializer(data=request.data)
+        if serializer.is_valid():
+            address = serializer.save(user=request.user)
+
+            if address.is_default:
+                Address.objects.filter(user=request.user).exclude(id=address.id).update(is_default=False)
+
+            return Response({"success": True, "address": serializer.data}, status=201)
+
+        return Response(serializer.errors, status=400)
+
+
+class AddressDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, id):
+        address = get_object_or_404(Address, id=id, user=request.user)
+        serializer = AddressSerializer(address, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            address = serializer.save()
+
+            if address.is_default:
+                Address.objects.filter(user=request.user).exclude(id=address.id).update(is_default=False)
+
+            return Response({"success": True, "address": serializer.data})
+
+        return Response(serializer.errors, status=400)
+
+    def delete(self, request, id):
+        address = get_object_or_404(Address, id=id, user=request.user)
+        address.delete()
+        return Response({"success": True, "message": "Address deleted successfully"})

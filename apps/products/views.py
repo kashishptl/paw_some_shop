@@ -1,32 +1,41 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from apps.products.models import Product, Rating
 from apps.products.serializers import ProductSerializer, RatingSerializer
 
+from django.shortcuts import get_object_or_404
+
 
 # -------------------------------
-# PRODUCT LIST (USER + ADMIN)
+# HELPER FUNCTION
 # -------------------------------
+
+def is_admin_or_manager(user):
+    return user.is_authenticated and (
+        user.is_staff or user.role in ["admin", "manager"]
+    )
+
+
+# -------------------------------
+# PRODUCT LIST
+# -------------------------------
+
 class ProductListCreateView(APIView):
 
     def get_permissions(self):
         if self.request.method == "POST":
-            return [IsAuthenticated(), IsAdminUser()]
+            return [IsAuthenticated()]
         return [AllowAny()]
 
-    # -------------------------------
-    # GET PRODUCTS
-    # -------------------------------
     def get(self, request):
 
-        # 🔥 ADMIN: sees ALL products
-        if request.user.is_authenticated and request.user.is_staff:
+        # Admin + Manager see all products
+        if is_admin_or_manager(request.user):
             products = Product.objects.all().select_related("category")
 
-        # 🟢 USER: only active + in-stock products
+        # Customer/Public see only active products
         else:
             products = Product.objects.filter(
                 category__is_active=True,
@@ -41,15 +50,12 @@ class ProductListCreateView(APIView):
             "data": serializer.data
         })
 
-    # -------------------------------
-    # CREATE PRODUCT (ADMIN ONLY)
-    # -------------------------------
     def post(self, request):
 
-        if not request.user.is_staff:
+        if not is_admin_or_manager(request.user):
             return Response({
                 "success": False,
-                "message": "Only admin can add product"
+                "message": "Only admin or manager can add product"
             }, status=403)
 
         serializer = ProductSerializer(data=request.data)
@@ -69,13 +75,11 @@ class ProductListCreateView(APIView):
 
 
 # -------------------------------
-# PRODUCT DETAIL (VIEW / UPDATE / DELETE)
+# PRODUCT DETAIL
 # -------------------------------
+
 class ProductDetailView(APIView):
 
-    # -------------------------------
-    # GET SINGLE PRODUCT
-    # -------------------------------
     def get(self, request, id):
         try:
             product = Product.objects.get(id=id)
@@ -85,8 +89,8 @@ class ProductDetailView(APIView):
                 "message": "Product not found"
             }, status=404)
 
-        # 🔴 USER restriction
-        if not request.user.is_staff:
+        # Customer/Public restriction
+        if not is_admin_or_manager(request.user):
             if not product.is_active or product.stock <= 0:
                 return Response({
                     "success": False,
@@ -100,15 +104,12 @@ class ProductDetailView(APIView):
             "data": serializer.data
         })
 
-    # -------------------------------
-    # UPDATE PRODUCT (ADMIN ONLY)
-    # -------------------------------
     def patch(self, request, id):
 
-        if not request.user.is_staff:
+        if not is_admin_or_manager(request.user):
             return Response({
                 "success": False,
-                "message": "Only admin can update product"
+                "message": "Only admin or manager can update product"
             }, status=403)
 
         try:
@@ -134,15 +135,12 @@ class ProductDetailView(APIView):
             "errors": serializer.errors
         }, status=400)
 
-    # -------------------------------
-    # DELETE PRODUCT (ADMIN ONLY)
-    # -------------------------------
     def delete(self, request, id):
 
-        if not request.user.is_staff:
+        if not is_admin_or_manager(request.user):
             return Response({
                 "success": False,
-                "message": "Only admin can delete product"
+                "message": "Only admin or manager can delete product"
             }, status=403)
 
         try:
@@ -158,43 +156,57 @@ class ProductDetailView(APIView):
         return Response({
             "success": True,
             "message": "Product deleted successfully"
-        }, status=204)
+        }, status=200)
 
 
 # -------------------------------
-# PRODUCT RATING (USER ONLY)
+# PRODUCT RATING
 # -------------------------------
+
 class ProductRateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
+        product = get_object_or_404(Product, id=id)
 
-        try:
-            product = Product.objects.get(id=id)
-        except Product.DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "Product not found"
-            }, status=404)
+        rating = request.data.get("rating")
+        review = request.data.get("review", "")
 
-        rating_obj, created = Rating.objects.get_or_create(
+        if rating is None:
+            return Response({"success": False, "message": "Rating is required"}, status=400)
+
+        rating = int(rating)
+
+        rating_obj = Rating.objects.filter(
             product=product,
             user=request.user
-        )
+        ).first()
 
-        rating_obj.rating = request.data.get("rating")
-        rating_obj.review = request.data.get("review", "")
-        rating_obj.save()
+        if rating_obj:
+            rating_obj.rating = rating
+            rating_obj.review = review
+            rating_obj.save()
+        else:
+            rating_obj = Rating.objects.create(
+                product=product,
+                user=request.user,
+                rating=rating,
+                review=review
+            )
+
+        serializer = RatingSerializer(rating_obj)
 
         return Response({
             "success": True,
-            "message": "Rating submitted successfully"
-        })
+            "message": "Rating submitted successfully",
+            "data": serializer.data
+        }, status=201)
 
 
 # -------------------------------
-# PRODUCT RATINGS LIST (PUBLIC)
+# PRODUCT RATINGS LIST
 # -------------------------------
+
 class ProductRatingListView(APIView):
     permission_classes = [AllowAny]
 
@@ -207,4 +219,4 @@ class ProductRatingListView(APIView):
             "success": True,
             "count": ratings.count(),
             "data": serializer.data
-        })
+        })  
