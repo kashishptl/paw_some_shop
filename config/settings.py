@@ -81,6 +81,8 @@ STORAGES = {
     },
 }
 
+DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware', 
@@ -150,10 +152,10 @@ EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 
-EMAIL_HOST_USER = "kashishpatel0828@gmail.com"
-EMAIL_HOST_PASSWORD = "cwcq elng wwmn jywz"
+EMAIL_HOST_USER = "pawsome3128@gmail.com"
+EMAIL_HOST_PASSWORD = "urlp swzn onpy vejy"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-
+DEFAULT_FROM_EMAIL = "Pawsome No Reply <pawsome3128@gmail.com>"
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -226,3 +228,15 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 
 
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=24),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}

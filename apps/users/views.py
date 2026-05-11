@@ -242,17 +242,40 @@ class AssignRoleView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def patch(self, request, user_id):
-        user = User.objects.get(id=user_id)
+        user = get_object_or_404(User, id=user_id)
 
         role = request.data.get("role")
 
-        if role not in ["admin", "manager", "customer"]:
-            return Response({"error": "Invalid role"}, status=400)
+        if role:
+            if role not in ["admin", "manager", "customer"]:
+                return Response({"error": "Invalid role"}, status=400)
+            user.role = role
 
-        user.role = role
+        if "is_active" in request.data:
+            is_active = request.data.get("is_active")
+
+            if isinstance(is_active, bool):
+                user.is_active = is_active
+            elif str(is_active).lower() == "true":
+                user.is_active = True
+            elif str(is_active).lower() == "false":
+                user.is_active = False
+            else:
+                return Response({"error": "is_active must be true or false"}, status=400)
+
         user.save()
 
-        return Response({"message": f"Role updated to {role}"})
+        return Response({
+            "success": True,
+            "message": "User updated successfully",
+            "data": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role,
+                "is_active": user.is_active
+            }
+        })
 
 
 # =========================

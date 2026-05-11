@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from email.headerregistry import Address
 
 from rest_framework.views import APIView
@@ -15,7 +17,6 @@ from .models import Order, OrderItem, Address
 # -------------------------------
 # CREATE ORDER (USER ONLY)
 # -------------------------------
-
 class CreateOrderView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -33,22 +34,40 @@ class CreateOrderView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         address_id = request.data.get("address_id")
-
-        if not address_id:
-            return Response({
-                "success": False,
-                "message": "address_id is required"
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        address = get_object_or_404(Address, id=address_id, user=user)
-
         payment_method = request.data.get("payment_method", "cod")
 
-        with transaction.atomic():
+        # OLD ADDRESS SELECTED
+        if address_id:
+            address = get_object_or_404(Address, id=address_id, user=user)
 
+        # NEW ADDRESS ENTERED
+        else:
+            required_fields = [
+                "full_name", "email", "phone",
+                "address", "city", "zip_code", "country"
+            ]
+
+            for field in required_fields:
+                if not request.data.get(field):
+                    return Response({
+                        "success": False,
+                        "message": f"{field} is required"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            address = Address.objects.create(
+                user=user,
+                full_name=request.data.get("full_name"),
+                email=request.data.get("email"),
+                phone=request.data.get("phone"),
+                address=request.data.get("address"),
+                city=request.data.get("city"),
+                zip_code=request.data.get("zip_code"),
+                country=request.data.get("country"),
+            )
+
+        with transaction.atomic():
             subtotal = Decimal("0.00")
 
-            # stock check first
             for item in cart_items:
                 if item.quantity > item.product.stock:
                     return Response({
@@ -56,7 +75,6 @@ class CreateOrderView(APIView):
                         "message": f"Only {item.product.stock} items available for {item.product.name}"
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-            # calculate subtotal
             for item in cart_items:
                 subtotal += item.product.price * item.quantity
 
@@ -66,15 +84,14 @@ class CreateOrderView(APIView):
 
             order = Order.objects.create(
                 user=user,
-                address_ref=address,
 
                 full_name=address.full_name,
                 email=address.email,
+                phone=address.phone,
                 address=address.address,
                 city=address.city,
                 zip_code=address.zip_code,
                 country=address.country,
-                phone=address.phone,
 
                 subtotal=subtotal,
                 tax=tax,
@@ -106,7 +123,7 @@ class CreateOrderView(APIView):
             "message": "Order created successfully",
             "order": serializer.data
         }, status=status.HTTP_201_CREATED)
-
+    
 # -------------------------------
 # GET USER ORDERS
 # -------------------------------
