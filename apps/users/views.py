@@ -17,11 +17,46 @@ from django.db.models import Sum, F
 from .models import User, Wishlist
 from .serializers import SignupSerializer, UserSerializer, WishlistSerializer
 from apps.products.models import Product
-
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from .permissions import IsAdmin, IsManagerOrAdmin
 
+from django.core.mail import send_mail
+from django.conf import settings
+
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 User = get_user_model()
 
+
+# =========================
+# verify email
+# =========================
+
+class VerifyEmailView(APIView):
+    permission_classes = []
+
+    def get(self, request, uidb64, token):
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except Exception:
+            return Response({
+                "error": "Invalid verification link"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if default_token_generator.check_token(user, token):
+            user.is_active = True
+            user.save()
+
+            return Response({
+                "message": "Email verified successfully. Now you can login."
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "error": "Verification link is invalid or expired"
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 # =========================
 # signup view
@@ -29,59 +64,95 @@ User = get_user_model()
 
 class SignupView(APIView):
     permission_classes = []
+
     def post(self, request):
+        password = request.data.get("password")
+
+        # Strong password validation
+        try:
+            validate_password(password)
+        except ValidationError as e:
+            return Response({
+                "password_errors": e.messages
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = SignupSerializer(data=request.data)
 
         if serializer.is_valid():
             user = serializer.save()
 
-            # 🔥 Generate tokens
-            refresh = RefreshToken.for_user(user)
+            # User inactive until email verified
+            user.is_active = False
+            user.save()
+
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+
+            verification_link = request.build_absolute_uri(
+                f"/api/users/verify-email/{uid}/{token}/"
+            )
+
+            send_mail(
+                subject="Verify your email",
+                message=f"Click this link to verify your email:\n{verification_link}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
 
             return Response({
-                "message": "User created successfully",
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
+                "message": "User created successfully. Verification link sent to email.",
                 "user": {
                     "id": user.id,
                     "email": user.email,
                     "name": user.name,
-                    "role": user.role
+                    "role": user.role,
+                    "is_active": user.is_active
                 }
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 # =========================
 # login view
 # =========================
 
 class LoginView(APIView):
     permission_classes = []
+
     def post(self, request):
         email = request.data.get("email")
         password = request.data.get("password")
 
         user = User.objects.filter(email=email).first()
 
-        if user and user.check_password(password):
-
-            refresh = RefreshToken.for_user(user)
-
+        if not user:
             return Response({
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "name": user.name,
-                    "is_active": user.is_active,
-                    "role": user.role
-                }
-            })
+                "error": "Email not registered"
+            }, status=404)
 
-        return Response({"error": "Invalid credentials"}, status=401)
+        if not user.check_password(password):
+            return Response({
+                "error": "Wrong password"
+            }, status=401)
 
+        if user.is_active == False:
+            return Response({
+                "error": "Please verify your email before login"
+            }, status=403)
+
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "is_active": user.is_active,
+                "role": user.role
+            }
+        })
 # =========================
 # profile view
 # =========================

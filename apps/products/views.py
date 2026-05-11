@@ -80,24 +80,23 @@ class ProductListCreateView(APIView):
 
 class ProductDetailView(APIView):
 
-    def get(self, request, id):
-        try:
-            product = Product.objects.get(id=id)
-        except Product.DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "Product not found"
-            }, status=404)
+    def get_permissions(self):
+        if self.request.method in ["PATCH", "DELETE"]:
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
-        # Customer/Public restriction
+    def get(self, request, id):
+        product = get_object_or_404(Product, id=id)
+
+        # normal user cannot view inactive product
         if not is_admin_or_manager(request.user):
-            if not product.is_active or product.stock <= 0:
+            if not product.is_active or not product.category.is_active:
                 return Response({
                     "success": False,
-                    "message": "Product not available"
-                }, status=403)
+                    "message": "Product not found"
+                }, status=404)
 
-        serializer = ProductSerializer(product)
+        serializer = ProductSerializer(product, context={"request": request})
 
         return Response({
             "success": True,
@@ -105,21 +104,13 @@ class ProductDetailView(APIView):
         })
 
     def patch(self, request, id):
-
         if not is_admin_or_manager(request.user):
             return Response({
                 "success": False,
                 "message": "Only admin or manager can update product"
             }, status=403)
 
-        try:
-            product = Product.objects.get(id=id)
-        except Product.DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "Product not found"
-            }, status=404)
-
+        product = get_object_or_404(Product, id=id)
         serializer = ProductSerializer(product, data=request.data, partial=True)
 
         if serializer.is_valid():
@@ -136,28 +127,19 @@ class ProductDetailView(APIView):
         }, status=400)
 
     def delete(self, request, id):
-
         if not is_admin_or_manager(request.user):
             return Response({
                 "success": False,
                 "message": "Only admin or manager can delete product"
             }, status=403)
 
-        try:
-            product = Product.objects.get(id=id)
-        except Product.DoesNotExist:
-            return Response({
-                "success": False,
-                "message": "Product not found"
-            }, status=404)
-
+        product = get_object_or_404(Product, id=id)
         product.delete()
 
         return Response({
             "success": True,
             "message": "Product deleted successfully"
-        }, status=200)
-
+        })
 
 # -------------------------------
 # PRODUCT RATING

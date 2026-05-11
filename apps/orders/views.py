@@ -28,29 +28,44 @@ class CreateOrderView(APIView):
 
         if not cart_items.exists():
             return Response({
-                "error": "Cart is empty"
+                "success": False,
+                "message": "Cart is empty"
             }, status=status.HTTP_400_BAD_REQUEST)
 
         address_id = request.data.get("address_id")
 
         if not address_id:
             return Response({
-                "error": "address_id is required"
+                "success": False,
+                "message": "address_id is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        address = get_object_or_404(
-            Address,
-            id=address_id,
-            user=user
-        )
+        address = get_object_or_404(Address, id=address_id, user=user)
 
         payment_method = request.data.get("payment_method", "cod")
 
         with transaction.atomic():
 
+            subtotal = Decimal("0.00")
+
+            # stock check first
+            for item in cart_items:
+                if item.quantity > item.product.stock:
+                    return Response({
+                        "success": False,
+                        "message": f"Only {item.product.stock} items available for {item.product.name}"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            # calculate subtotal
+            for item in cart_items:
+                subtotal += item.product.price * item.quantity
+
+            tax = Decimal("0.00")
+            shipping_charge = Decimal("0.00")
+            total_amount = subtotal + tax + shipping_charge
+
             order = Order.objects.create(
                 user=user,
-
                 address_ref=address,
 
                 full_name=address.full_name,
@@ -61,49 +76,26 @@ class CreateOrderView(APIView):
                 country=address.country,
                 phone=address.phone,
 
-                subtotal=0,
-                tax=0,
-                shipping_charge=0,
-                total_amount=0,
+                subtotal=subtotal,
+                tax=tax,
+                shipping_charge=shipping_charge,
+                total_amount=total_amount,
 
                 payment_method=payment_method
             )
 
-            subtotal = 0
-
             for item in cart_items:
                 product = item.product
-                quantity = item.quantity
-
-                if quantity > product.stock:
-                    transaction.set_rollback(True)
-
-                    return Response({
-                        "error": f"Only {product.stock} items available for {product.name}"
-                    }, status=status.HTTP_400_BAD_REQUEST)
-
-                price = product.price
-                subtotal += price * quantity
 
                 OrderItem.objects.create(
                     order=order,
                     product=product,
-                    quantity=quantity,
-                    price=price
+                    quantity=item.quantity,
+                    price=product.price
                 )
 
-                product.stock -= quantity
+                product.stock -= item.quantity
                 product.save()
-
-            tax = 0
-            shipping_charge = 0
-
-            order.subtotal = subtotal
-            order.tax = tax
-            order.shipping_charge = shipping_charge
-            order.total_amount = subtotal + tax + shipping_charge
-
-            order.save()
 
             cart_items.delete()
 
@@ -114,7 +106,6 @@ class CreateOrderView(APIView):
             "message": "Order created successfully",
             "order": serializer.data
         }, status=status.HTTP_201_CREATED)
-
 
 # -------------------------------
 # GET USER ORDERS
@@ -141,14 +132,21 @@ class OrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, id):
-        order = get_object_or_404(Order, id=id, user=request.user)
+
+        # admin can view any order
+        if request.user.is_staff or request.user.role == "admin":
+            order = get_object_or_404(Order, id=id)
+
+        # customer can view only own order
+        else:
+            order = get_object_or_404(Order, id=id, user=request.user)
+
         serializer = OrderSerializer(order)
 
         return Response({
             "success": True,
             "order": serializer.data
         }, status=status.HTTP_200_OK)
-
 
 # -------------------------------
 # CANCEL ORDER

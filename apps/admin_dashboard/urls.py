@@ -11,7 +11,7 @@ from .views import (
 )
 
 urlpatterns = [
-    path("", AdminDashboardView.as_view(), name="admin-dashboard"),
+    path("dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
 
     path("products/", AdminProductsView.as_view(), name="admin-products"),
     path("orders/", AdminOrdersView.as_view(), name="admin-orders"),

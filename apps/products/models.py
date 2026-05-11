@@ -21,7 +21,7 @@ class Product(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)  # pehle file disk pe save ho jaye
-        self._crop_image_to_square()
+
 
     def _crop_image_to_square(self):
         if not self.image:

@@ -43,7 +43,7 @@ urlpatterns = [
     
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0)),
     path('api/orders/', include('apps.orders.urls')),
-    path("api/admin/dashboard/", include("apps.admin_dashboard.urls")),
+    path("api/admin/", include("apps.admin_dashboard.urls")),
 ] 
 
 if settings.DEBUG:

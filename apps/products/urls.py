@@ -21,7 +21,7 @@ urlpatterns = [
     # DELETE → delete product (admin only)
     path('<int:id>/', ProductDetailView.as_view(), name='product-detail'),
 
-
+    
     # -------------------------------
     # RATING APIs
     # -------------------------------
