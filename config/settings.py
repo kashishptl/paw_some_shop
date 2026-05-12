@@ -60,7 +60,6 @@ INSTALLED_APPS = [
     'apps.orders',
     'apps.payments',
     'apps.cart',
-    # "apps.address",
     "apps.admin_dashboard",
 ]
 
@@ -92,27 +91,38 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.common.CommonMiddleware",
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",  # backend
+    "http://localhost:8080",
     "http://localhost:5173",
-    "http://localhost:3000",   
+    "http://localhost:3000",
     "http://127.0.0.1:5173",
+
     "http://192.168.1.26:8080",
     "http://192.168.1.28:8080",
 ]
+
 ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://192\.168\.\d+\.\d+:5173$",
+    r"^http://192\.168\.\d+\.\d+:8080$",
+]
 
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+
+        'DIRS': [BASE_DIR / 'templates'],
+
         'APP_DIRS': True,
+
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
@@ -240,3 +250,9 @@ SIMPLE_JWT = {
 
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent

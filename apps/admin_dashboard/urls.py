@@ -1,13 +1,15 @@
 from django.urls import path
 from .views import (
     AdminDashboardView,
+    AdminPasswordSettingsView,
     AdminProductsView,
     AdminOrdersView,
+    AdminProfileSettingsView,
+    AdminStoreSettingsView,
     AdminUsersView,
     AdminCategoriesView,
     AdminReviewsView,
     AdminAnalyticsView,
-    AdminSettingsView
 )
 
 urlpatterns = [
@@ -19,5 +21,7 @@ urlpatterns = [
     path("categories/", AdminCategoriesView.as_view(), name="admin-categories"),
     path("reviews/", AdminReviewsView.as_view(), name="admin-reviews"),
     path("analytics/", AdminAnalyticsView.as_view(), name="admin-analytics"),
-    path("settings/", AdminSettingsView.as_view(), name="admin-settings"),
+    path("settings/profile/", AdminProfileSettingsView.as_view(), name="admin-profile-settings"),
+    path("settings/password/", AdminPasswordSettingsView.as_view(), name="admin-password-settings"),
+    path("settings/store/", AdminStoreSettingsView.as_view(), name="admin-store-settings"),
 ]

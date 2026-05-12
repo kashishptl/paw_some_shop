@@ -23,6 +23,7 @@ from .permissions import IsAdmin, IsManagerOrAdmin
 
 from django.core.mail import send_mail
 from django.conf import settings
+from django.shortcuts import render
 
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -170,19 +171,38 @@ class ProfileView(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
-
+    
+    
 # =========================
-# Add wishlist view
+# Wishlist View
+# GET    → view wishlist
+# POST   → add to wishlist
+# DELETE → remove from wishlist
 # =========================
 
-class AddToWishlistView(APIView):
+class WishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        if request.user.role != "customer":
-            return Response({"error": "Only customers can add to wishlist"}, status=403)
+    # View wishlist
+    def get(self, request):
+        items = Wishlist.objects.filter(user=request.user)
+        serializer = WishlistSerializer(items, many=True)
 
+        return Response({
+            "success": True,
+            "count": items.count(),
+            "data": serializer.data
+        })
+
+    # Add to wishlist
+    def post(self, request):
         product_id = request.data.get("product_id")
+
+        if not product_id:
+            return Response({
+                "success": False,
+                "message": "product_id is required"
+            }, status=400)
 
         product = get_object_or_404(Product, id=product_id)
 
@@ -192,48 +212,41 @@ class AddToWishlistView(APIView):
         )
 
         if created:
-            return Response({"message": "Added to wishlist"})
-        else:
-            return Response({"message": "Already in wishlist"})
+            return Response({
+                "success": True,
+                "message": "Added to wishlist"
+            }, status=201)
 
+        return Response({
+            "success": False,
+            "message": "Already in wishlist"
+        }, status=200)
 
-# =========================
-# remove from wishlist view
-# =========================
+    # Remove from wishlist
+    def delete(self, request):
+        product_id = request.data.get("product_id")
 
-class RemoveFromWishlistView(APIView):
-    permission_classes = [IsAuthenticated]
+        if not product_id:
+            return Response({
+                "success": False,
+                "message": "product_id is required"
+            }, status=400)
 
-    def delete(self, request, product_id):
-
-        if request.user.role != "customer":
-            return Response({"error": "Only customers can remove wishlist"}, status=403)
-        
-
-        Wishlist.objects.filter(
+        deleted_count, _ = Wishlist.objects.filter(
             user=request.user,
             product_id=product_id
         ).delete()
 
+        if deleted_count == 0:
+            return Response({
+                "success": False,
+                "message": "Product not found in wishlist"
+            }, status=404)
 
-        return Response({"message": "Removed from wishlist"})
-
-# =========================
-# wishlist view
-# =========================
-
-class WishlistView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-
-        if request.user.role != "customer":
-            return Response({"error": "Only customers can view wishlist"}, status=403)
-
-        items = Wishlist.objects.filter(user=request.user)
-        serializer = WishlistSerializer(items, many=True)
-        return Response(serializer.data)
-
+        return Response({
+            "success": True,
+            "message": "Removed from wishlist"
+        }, status=200)
 # =========================
 # ADMIN ASSIGN ROLE VIEW
 # =========================
@@ -241,6 +254,9 @@ class WishlistView(APIView):
 class AssignRoleView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
+    # -------------------------------
+    # UPDATE ROLE / ACTIVE STATUS
+    # -------------------------------
     def patch(self, request, user_id):
         user = get_object_or_404(User, id=user_id)
 
@@ -248,7 +264,11 @@ class AssignRoleView(APIView):
 
         if role:
             if role not in ["admin", "manager", "customer"]:
-                return Response({"error": "Invalid role"}, status=400)
+                return Response(
+                    {"error": "Invalid role"},
+                    status=400
+                )
+
             user.role = role
 
         if "is_active" in request.data:
@@ -256,12 +276,18 @@ class AssignRoleView(APIView):
 
             if isinstance(is_active, bool):
                 user.is_active = is_active
+
             elif str(is_active).lower() == "true":
                 user.is_active = True
+
             elif str(is_active).lower() == "false":
                 user.is_active = False
+
             else:
-                return Response({"error": "is_active must be true or false"}, status=400)
+                return Response(
+                    {"error": "is_active must be true or false"},
+                    status=400
+                )
 
         user.save()
 
@@ -276,6 +302,26 @@ class AssignRoleView(APIView):
                 "is_active": user.is_active
             }
         })
+
+    # -------------------------------
+    # DELETE USER
+    # -------------------------------
+    def delete(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+
+        # Prevent deleting self
+        if user == request.user:
+            return Response({
+                "success": False,
+                "message": "You cannot delete yourself"
+            }, status=400)
+
+        user.delete()
+
+        return Response({
+            "success": True,
+            "message": "User deleted successfully"
+        }, status=200)
 
 
 # =========================
@@ -317,4 +363,35 @@ class UserDashboardView(APIView):
                 "wishlist_count": wishlist_count,
             },
             "recent_orders": OrderSerializer(recent_orders, many=True).data
+        })
+    
+
+
+class VerifyEmailView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, uidb64, token):
+        try:
+            uid = urlsafe_base64_decode(uidb64).decode()
+            user = User.objects.get(pk=uid)
+        except Exception:
+            return render(request, "email_verification.html", {
+                "success": False,
+                "message": "Invalid verification link."
+            })
+
+        if default_token_generator.check_token(user, token):
+            user.is_active = True
+            user.is_email_verified = True
+            user.save()
+
+            return render(request, "email_verification.html", {
+                "success": True,
+                "message": "Email verified successfully. Now you can login."
+            })
+
+        return render(request, "email_verification.html", {
+            "success": False,
+            "message": "Verification link expired or invalid."
         })

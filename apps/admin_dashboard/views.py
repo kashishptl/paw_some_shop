@@ -10,6 +10,7 @@ from apps.users.models import User
 from apps.products.models import Product, Rating
 from apps.categories.models import Category
 from apps.orders.models import Order
+from apps.users.permissions import IsManagerOrAdmin
 from .models import SiteSettings
 
 # ==============================
@@ -154,7 +155,7 @@ class AdminUsersView(APIView):
                 "name": user.name,
                 "email": user.email,
                 "role": user.role,
-                "joined": user.date_joined if hasattr(user, "date_joined") else None,
+                "joined": user.created_at if hasattr(user, "created_at") else None,
                 "orders": user.order_count,
                 "spent": user.total_spent or 0,
                 "status": "Active" if user.is_active else "Blocked",
@@ -291,29 +292,148 @@ class AdminAnalyticsView(APIView):
 # ==============================
 # ADMIN SETTINGS PAGE
 # ==============================
-class AdminSettingsView(APIView):
-    permission_classes = [IsAdminUser]
+# apps/admin_dashboard/views.py
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from .models import SiteSettings
+
+
+class AdminProfileSettingsView(APIView):
+    permission_classes = [IsManagerOrAdmin]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            "success": True,
+            "data": {
+                "name": user.name,
+                "email": user.email,
+            }
+        })
+
+    def patch(self, request):
+        user = request.user
+
+        user.name = request.data.get("name", user.name)
+        user.email = request.data.get("email", user.email)
+        user.save()
+
+        return Response({
+            "success": True,
+            "message": "Profile updated successfully",
+            "data": {
+                "name": user.name,
+                "email": user.email,
+            }
+        })
+
+
+class AdminPasswordSettingsView(APIView):
+    permission_classes = [IsManagerOrAdmin]
+
+    def patch(self, request):
+        user = request.user
+
+        current_password = request.data.get("current_password")
+        new_password = request.data.get("new_password")
+        confirm_password = request.data.get("confirm_password")
+
+        if not current_password or not new_password or not confirm_password:
+            return Response({
+                "success": False,
+                "message": "All password fields are required"
+            }, status=400)
+
+        if not user.check_password(current_password):
+            return Response({
+                "success": False,
+                "message": "Current password is incorrect"
+            }, status=400)
+
+        if new_password != confirm_password:
+            return Response({
+                "success": False,
+                "message": "New password and confirm password do not match"
+            }, status=400)
+
+        try:
+            validate_password(new_password, user)
+        except ValidationError as e:
+            return Response({
+                "success": False,
+                "message": e.messages
+            }, status=400)
+
+        user.set_password(new_password)
+        user.save()
+
+        return Response({
+            "success": True,
+            "message": "Password updated successfully"
+        })
+
+
+class AdminStoreSettingsView(APIView):
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         settings = SiteSettings.objects.first()
 
         if not settings:
-            return Response({
-                "success": False,
-                "message": "Settings not found"
-            })
-
-        data = {
-            "site_name": settings.site_name,
-            "support_email": settings.support_email,
-            "currency": settings.currency,
-            "tax_percentage": settings.tax_percentage,
-            "shipping_charge": settings.shipping_charge,
-            "maintenance_mode": settings.maintenance_mode,
-            "logo": settings.logo.url if settings.logo else None,
-        }
+            settings = SiteSettings.objects.create(
+                site_name="Pawsome",
+                support_email="support@pawsome.com",
+                currency="INR",
+                tax_percentage=0,
+                shipping_charge=0,
+                maintenance_mode=False
+            )
 
         return Response({
             "success": True,
-            "data": data
+            "data": {
+                "site_name": settings.site_name,
+                "support_email": settings.support_email,
+                "currency": settings.currency,
+                "tax_percentage": settings.tax_percentage,
+                "shipping_charge": settings.shipping_charge,
+                "maintenance_mode": settings.maintenance_mode,
+                "logo": settings.logo.url if settings.logo else None,
+            }
+        })
+
+    def patch(self, request):
+        settings = SiteSettings.objects.first()
+
+        if not settings:
+            settings = SiteSettings.objects.create()
+
+        settings.site_name = request.data.get("site_name", settings.site_name)
+        settings.support_email = request.data.get("support_email", settings.support_email)
+        settings.currency = request.data.get("currency", settings.currency)
+        settings.tax_percentage = request.data.get("tax_percentage", settings.tax_percentage)
+        settings.shipping_charge = request.data.get("shipping_charge", settings.shipping_charge)
+        settings.maintenance_mode = request.data.get("maintenance_mode", settings.maintenance_mode)
+
+        if request.FILES.get("logo"):
+            settings.logo = request.FILES.get("logo")
+
+        settings.save()
+
+        return Response({
+            "success": True,
+            "message": "Store settings updated successfully",
+            "data": {
+                "site_name": settings.site_name,
+                "support_email": settings.support_email,
+                "currency": settings.currency,
+                "tax_percentage": settings.tax_percentage,
+                "shipping_charge": settings.shipping_charge,
+                "maintenance_mode": settings.maintenance_mode,
+                "logo": settings.logo.url if settings.logo else None,
+            }
         })
