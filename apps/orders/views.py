@@ -39,6 +39,7 @@ class CreateOrderView(APIView):
         # OLD ADDRESS SELECTED
         if address_id:
             address = get_object_or_404(Address, id=address_id, user=user)
+            new_address_created = False
 
         # NEW ADDRESS ENTERED
         else:
@@ -54,15 +55,17 @@ class CreateOrderView(APIView):
                         "message": f"{field} is required"
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-            address = Address.objects.create(
+            # SAME ADDRESS HOY TO OLD USE THASE,
+            # NEW HOY TO J CREATE THASE
+            address, new_address_created = Address.objects.get_or_create(
                 user=user,
-                full_name=request.data.get("full_name"),
-                email=request.data.get("email"),
-                phone=request.data.get("phone"),
-                address=request.data.get("address"),
-                city=request.data.get("city"),
-                zip_code=request.data.get("zip_code"),
-                country=request.data.get("country"),
+                full_name=request.data.get("full_name").strip(),
+                email=request.data.get("email").strip(),
+                phone=request.data.get("phone").strip(),
+                address=request.data.get("address").strip(),
+                city=request.data.get("city").strip(),
+                zip_code=request.data.get("zip_code").strip(),
+                country=request.data.get("country").strip(),
             )
 
         with transaction.atomic():
@@ -75,7 +78,6 @@ class CreateOrderView(APIView):
                         "message": f"Only {item.product.stock} items available for {item.product.name}"
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-            for item in cart_items:
                 subtotal += item.product.price * item.quantity
 
             tax = Decimal("0.00")
@@ -121,6 +123,7 @@ class CreateOrderView(APIView):
         return Response({
             "success": True,
             "message": "Order created successfully",
+            "new_address_created": new_address_created,
             "order": serializer.data
         }, status=status.HTTP_201_CREATED)
     

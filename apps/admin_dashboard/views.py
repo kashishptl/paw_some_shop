@@ -235,7 +235,9 @@ class AdminAnalyticsView(APIView):
         today = timezone.now().date()
         last_30_days = today - timedelta(days=30)
 
-        # Daily revenue - last 30 days
+        # ==============================
+        # DAILY REVENUE
+        # ==============================
         daily_revenue_qs = Order.objects.filter(
             created_at__date__gte=last_30_days
         ).exclude(
@@ -247,13 +249,20 @@ class AdminAnalyticsView(APIView):
         ).order_by("day")
 
         daily_revenue = []
+
         for item in daily_revenue_qs:
             daily_revenue.append({
                 "day": item["day"].date() if item["day"] else None,
                 "revenue": item["revenue"] or 0
             })
 
-        # Monthly orders
+        # If no orders
+        if not daily_revenue:
+            daily_revenue = []
+
+        # ==============================
+        # MONTHLY ORDERS
+        # ==============================
         monthly_orders_qs = Order.objects.annotate(
             month=TruncMonth("created_at")
         ).values("month").annotate(
@@ -261,14 +270,21 @@ class AdminAnalyticsView(APIView):
         ).order_by("month")
 
         monthly_orders = []
+
         for item in monthly_orders_qs:
             monthly_orders.append({
                 "month": item["month"].strftime("%B %Y") if item["month"] else None,
                 "orders": item["orders"]
             })
 
-        # Category product count
-            category_share_qs = Category.objects.annotate(
+        # If no orders
+        if not monthly_orders:
+            monthly_orders = []
+
+        # ==============================
+        # CATEGORY PRODUCT COUNT
+        # ==============================
+        category_share_qs = Category.objects.annotate(
             product_count=Count("products")
         ).values("name", "product_count")
 
@@ -279,6 +295,10 @@ class AdminAnalyticsView(APIView):
                 "name": item["name"],
                 "products": item["product_count"]
             })
+
+        # If no categories
+        if not category_share:
+            category_share = []
 
         return Response({
             "success": True,
