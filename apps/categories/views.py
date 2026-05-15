@@ -143,35 +143,42 @@ class CategoryProductsView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, slug):
+
         try:
             category = Category.objects.get(slug=slug)
+
         except Category.DoesNotExist:
             return Response({
                 "success": False,
                 "message": "Category not found"
             }, status=404)
 
-        # 🔴 Hide inactive category from customer
-        if request.user.role == "customer":
+        # 👑 Admin & Manager → all products
+        if request.user.is_authenticated and request.user.role in ["admin", "manager"]:
+
+            products = Product.objects.filter(category=category)
+
+        else:
+            # 👤 Public/Customer → only active category + active products
+
             if not category.is_active:
                 return Response({
                     "success": False,
                     "message": "Category not available"
                 }, status=403)
 
-        # 👑 Admin & Manager → all products
-        if request.user.is_authenticated and request.user.role in ["admin", "manager"]:
-            products = Product.objects.filter(category=category)
-
-        else:
-            # 👤 Customer → only active products
             products = Product.objects.filter(
-                category__is_active=True,
                 category=category,
-                is_active=True
+                category__is_active=True,
+                is_active=True,
+                stock__gt=0
             )
 
-        serializer = ProductSerializer(products, many=True)
+        serializer = ProductSerializer(
+            products,
+            many=True,
+            context={"request": request}
+        )
 
         return Response({
             "success": True,

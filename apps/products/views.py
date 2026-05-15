@@ -1,12 +1,16 @@
+from re import search
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from urllib3 import request
 
+from apps import products
 from apps.products.models import Product, Rating
 from apps.products.serializers import ProductSerializer, RatingSerializer
 
 from django.shortcuts import get_object_or_404
-
+from django.db.models import Q
 
 # -------------------------------
 # HELPER FUNCTION
@@ -72,7 +76,32 @@ class ProductListCreateView(APIView):
             "success": False,
             "errors": serializer.errors
         }, status=400)
+    
+    def get(self, request):
+        search = request.GET.get("search", "").strip()
 
+        if is_admin_or_manager(request.user):
+            products = Product.objects.all().select_related("category")
+        else:
+            products = Product.objects.filter(
+                category__is_active=True,
+                is_active=True
+            ).select_related("category")
+
+        if search:
+            products = products.filter(
+                Q(name__icontains=search) |
+                Q(description__icontains=search) |
+                Q(category__name__icontains=search)
+            ).distinct()
+
+        serializer = ProductSerializer(products, many=True)
+
+        return Response({
+            "success": True,
+            "count": products.count(),
+            "data": serializer.data
+        })
 
 # -------------------------------
 # PRODUCT DETAIL

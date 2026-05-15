@@ -223,15 +223,10 @@ class WishlistView(APIView):
         }, status=200)
 
     # Remove from wishlist
-    def delete(self, request):
-        product_id = request.data.get("product_id")
+class WishlistRemoveView(APIView):
+    permission_classes = [IsAuthenticated]
 
-        if not product_id:
-            return Response({
-                "success": False,
-                "message": "product_id is required"
-            }, status=400)
-
+    def delete(self, request, product_id):
         deleted_count, _ = Wishlist.objects.filter(
             user=request.user,
             product_id=product_id
